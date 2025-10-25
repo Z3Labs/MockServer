@@ -31,6 +31,19 @@ jobs:
         run: |
           go build -trimpath -ldflags="-s -w" -o mockserver-linux-amd64 cmd/server/main.go
       
+      - name: Create package
+        run: |
+          TAG_NAME=${{ steps.get_tag.outputs.TAG_NAME }}
+          PACKAGE_NAME="${TAG_NAME}_mockserver-linux-amd64"
+          
+          mkdir -p ${PACKAGE_NAME}
+          cp mockserver-linux-amd64 ${PACKAGE_NAME}/
+          cp etc/mockserver.yaml ${PACKAGE_NAME}/
+          
+          tar -czf ${PACKAGE_NAME}.tar.gz ${PACKAGE_NAME}
+          echo "Created package: ${PACKAGE_NAME}.tar.gz"
+          ls -lh ${PACKAGE_NAME}.tar.gz
+      
       - name: Download and setup qshell
         run: |
           wget https://devtools.qiniu.com/qshell-v2.12.0-linux-amd64.tar.gz
@@ -41,6 +54,7 @@ jobs:
       - name: Upload to Qiniu
         run: |
           TAG_NAME=${{ steps.get_tag.outputs.TAG_NAME }}
-          REMOTE_PATH="mockserver/${TAG_NAME}_mockserver-linux-amd64"
-          ./qshell rput ${{ secrets.QINIU_BUCKET }} "${REMOTE_PATH}" mockserver-linux-amd64
+          PACKAGE_NAME="${TAG_NAME}_mockserver-linux-amd64.tar.gz"
+          REMOTE_PATH="mockserver/${PACKAGE_NAME}"
+          ./qshell rput ${{ secrets.QINIU_BUCKET }} "${REMOTE_PATH}" ${PACKAGE_NAME}
           echo "Uploaded to: ${REMOTE_PATH}"
