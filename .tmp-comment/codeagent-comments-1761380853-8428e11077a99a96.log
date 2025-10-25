@@ -1,0 +1,1588 @@
+# Historical Comments and Reviews
+
+## Discussion Comments
+
+**@Lewinz** (Oct 25, 08:04)
+@xgopilot mock server 用 golang 实现，你先给出方案
+
+
+---
+
+**@xgopilot** (Oct 25, 08:04)
+### Mock Server 设计方案
+
+## 一、发布时可能遇到的异常场景分类
+
+### 1. 代码层面问题
+- **启动失败**: 服务启动时抛出异常、配置文件解析错误、依赖注入失败
+- **运行时错误**: 空指针异常、数组越界、资源泄漏
+- **逻辑错误**: 业务逻辑错误导致数据异常、死锁、死循环
+- **内存泄漏**: 程序持续运行导致内存占用不断增长
+- **Panic/Crash**: 程序运行中突然崩溃
+
+### 2. 资源层面问题
+- **CPU 异常**: CPU 使用率过高(50%/80%/100%)、CPU 窃取时间过高
+- **内存异常**: 内存使用率过高、OOM (Out of Memory)、内存碎片化
+- **磁盘异常**: 磁盘使用率过高、磁盘 IO 过高、磁盘满
+- **文件描述符**: 文件句柄泄漏、达到系统限制
+- **线程/协程**: 协程泄漏、线程数过多
+
+### 3. 网络层面问题
+- **网络延迟**: 响应时间变长(100ms/500ms/1s/5s)
+- **网络抖动**: 间歇性网络延迟或丢包
+- **网络中断**: 网络完全不可达、连接超时
+- **DNS 解析**: DNS 解析失败、解析缓慢
+- **连接池**: 连接池耗尽、连接泄漏
+- **带宽**: 网络带宽占用过高
+
+### 4. 依赖服务问题
+- **数据库**: 连接失败、查询超时、死锁、主从延迟
+- **缓存**: Redis/Memcached 连接失败、缓存雪崩/穿透
+- **消息队列**: Kafka/RabbitMQ 连接失败、消息积压
+- **RPC 调用**: 下游服务超时、熔断、限流
+- **第三方 API**: 外部 API 不可用、限流
+
+### 5. 服务健康检查问题
+- **健康检查失败**: HTTP 健康检查返回 500/503
+- **就绪检查失败**: Readiness probe 失败
+- **存活检查失败**: Liveness probe 失败
+- **启动检查失败**: Startup probe 失败
+
+### 6. 容器/编排层面问题
+- **镜像问题**: 镜像拉取失败、镜像不存在、镜像损坏
+- **容器启动**: 容器启动失败、容器反复重启(CrashLoopBackOff)
+- **资源限制**: 容器资源限制过小导致 OOMKilled
+- **存储挂载**: Volume 挂载失败、PVC 不可用
+
+### 7. 配置与环境问题
+- **配置错误**: 环境变量缺失、配置文件格式错误、配置值错误
+- **权限问题**: 文件权限不足、网络策略阻止访问
+- **端口冲突**: 监听端口已被占用
+- **证书问题**: SSL/TLS 证书过期、证书验证失败
+
+### 8. 版本兼容性问题
+- **API 不兼容**: 新版本 API 变更导致调用失败
+- **依赖版本**: 依赖库版本不兼容
+- **数据库 Schema**: 数据库结构变更未同步
+
+---
+
+## 二、Mock Server 架构设计
+
+### 核心设计理念
+1. **插件化架构**: 每种异常场景作为独立插件
+2. **可配置性**: 通过配置文件或 API 动态控制异常行为
+3. **可观测性**: 提供 Metrics、日志、追踪
+4. **真实性**: 模拟真实场景的异常表现
+5. **易用性**: 简单的 HTTP API 控制异常注入
+
+### 架构组件
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Mock Server                          │
+├─────────────────────────────────────────────────────────┤
+│  HTTP API Layer (控制平面)                               │
+│  - 启动/停止异常场景                                      │
+│  - 查询当前状态                                           │
+│  - 动态调整参数                                           │
+├─────────────────────────────────────────────────────────┤
+│  Scenario Manager (场景管理器)                           │
+│  - 场景生命周期管理                                       │
+│  - 场景参数配置                                           │
+│  - 并发场景协调                                           │
+├─────────────────────────────────────────────────────────┤
+│  Scenario Plugins (场景插件)                             │
+│  ├─ CPU Burner (CPU 占用)                                │
+│  ├─ Memory Leaker (内存泄漏)                             │
+│  ├─ Network Latency (网络延迟)                           │
+│  ├─ Disk IO (磁盘 IO)                                    │
+│  ├─ Crash Simulator (崩溃模拟)                           │
+│  ├─ Dependency Failure (依赖失败)                        │
+│  └─ Health Check Failure (健康检查失败)                  │
+├─────────────────────────────────────────────────────────┤
+│  Metrics & Observability (可观测性)                      │
+│  - Prometheus Metrics                                    │
+│  - Structured Logging                                    │
+│  - Health Check Endpoints                                │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 三、Golang 实现方案
+
+### 1. 项目结构
+
+```
+mock-server/
+├── cmd/
+│   └── server/
+│       └── main.go                 # 程序入口
+├── internal/
+│   ├── api/
+│   │   ├── handler.go              # HTTP API 处理器
+│   │   └── routes.go               # 路由定义
+│   ├── manager/
+│   │   └── scenario.go             # 场景管理器
+│   ├── scenarios/
+│   │   ├── interface.go            # 场景接口定义
+│   │   ├── cpu_burner.go           # CPU 占用场景
+│   │   ├── memory_leaker.go        # 内存泄漏场景
+│   │   ├── network_latency.go      # 网络延迟场景
+│   │   ├── disk_io.go              # 磁盘 IO 场景
+│   │   ├── crash.go                # 崩溃场景
+│   │   ├── goroutine_leak.go       # 协程泄漏场景
+│   │   ├── health_check.go         # 健康检查失败
+│   │   └── dependency.go           # 依赖服务失败
+│   ├── config/
+│   │   └── config.go               # 配置管理
+│   └── metrics/
+│       └── metrics.go              # 指标收集
+├── pkg/
+│   └── utils/
+│       └── resource.go             # 资源工具函数
+├── configs/
+│   └── config.yaml                 # 配置文件
+├── go.mod
+├── go.sum
+└── README.md
+```
+
+### 2. 核心接口定义
+
+```go
+// Scenario 接口定义
+type Scenario interface {
+    // Name 返回场景名称
+    Name() string
+    
+    // Start 启动场景,接收参数配置
+    Start(ctx context.Context, params map[string]interface{}) error
+    
+    // Stop 停止场景
+    Stop() error
+    
+    // Status 返回场景当前状态
+    Status() ScenarioStatus
+    
+    // Describe 返回场景描述信息
+    Describe() string
+}
+
+type ScenarioStatus struct {
+    Running   bool                   `json:"running"`
+    StartTime time.Time              `json:"start_time,omitempty"`
+    Params    map[string]interface{} `json:"params"`
+    Metrics   map[string]float64     `json:"metrics"`
+}
+```
+
+### 3. 关键场景实现伪代码
+
+#### 3.1 CPU Burner (CPU 占用)
+```go
+// 目标: 将 CPU 占用率提升到指定百分比
+type CPUBurner struct {
+    targetPercent int
+    stopCh        chan struct{}
+    running       atomic.Bool
+}
+
+func (c *CPUBurner) Start(ctx context.Context, params map[string]interface{}) error {
+    targetPercent := params["target_percent"].(int) // 例如: 80
+    numCores := runtime.NumCPU()
+    
+    // 根据目标百分比计算需要启动的忙循环协程数
+    for i := 0; i < numCores; i++ {
+        go func() {
+            for {
+                select {
+                case <-c.stopCh:
+                    return
+                default:
+                    // 忙循环占用 CPU
+                    for j := 0; j < 1000000; j++ {
+                        _ = j * j
+                    }
+                    // 通过调整休眠时间来控制 CPU 占用率
+                    time.Sleep(time.Millisecond * time.Duration((100-targetPercent)/10))
+                }
+            }
+        }()
+    }
+    return nil
+}
+```
+
+#### 3.2 Memory Leaker (内存泄漏)
+```go
+// 目标: 持续增长内存占用
+type MemoryLeaker struct {
+    leakedMemory [][]byte
+    leakRate     int // MB per second
+    stopCh       chan struct{}
+}
+
+func (m *MemoryLeaker) Start(ctx context.Context, params map[string]interface{}) error {
+    targetMB := params["target_mb"].(int)        // 目标内存 MB
+    leakRateMB := params["leak_rate_mb"].(int)   // 每秒泄漏 MB
+    
+    go func() {
+        ticker := time.NewTicker(time.Second)
+        defer ticker.Stop()
+        
+        for {
+            select {
+            case <-m.stopCh:
+                return
+            case <-ticker.C:
+                // 每秒分配指定大小的内存
+                chunk := make([]byte, leakRateMB*1024*1024)
+                // 填充内存防止被优化掉
+                for i := range chunk {
+                    chunk[i] = byte(i % 256)
+                }
+                m.leakedMemory = append(m.leakedMemory, chunk)
+                
+                // 检查是否达到目标
+                if len(m.leakedMemory)*leakRateMB >= targetMB {
+                    return
+                }
+            }
+        }
+    }()
+    return nil
+}
+```
+
+#### 3.3 Network Latency (网络延迟)
+```go
+// 目标: 为 HTTP 请求添加延迟
+type NetworkLatency struct {
+    latencyMs int
+    handler   http.Handler
+}
+
+func (n *NetworkLatency) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+    // 在处理请求前添加延迟
+    time.Sleep(time.Millisecond * time.Duration(n.latencyMs))
+    n.handler.ServeHTTP(w, r)
+}
+
+func (n *NetworkLatency) Start(ctx context.Context, params map[string]interface{}) error {
+    n.latencyMs = params["latency_ms"].(int) // 例如: 500
+    // 可以在中间件中注入延迟
+    return nil
+}
+```
+
+#### 3.4 Goroutine Leak (协程泄漏)
+```go
+// 目标: 持续创建不退出的协程
+type GoroutineLeak struct {
+    leakRate int // 每秒创建的协程数
+    stopCh   chan struct{}
+}
+
+func (g *GoroutineLeak) Start(ctx context.Context, params map[string]interface{}) error {
+    leakRate := params["goroutines_per_second"].(int)
+    
+    go func() {
+        ticker := time.NewTicker(time.Second)
+        defer ticker.Stop()
+        
+        for {
+            select {
+            case <-g.stopCh:
+                return
+            case <-ticker.C:
+                for i := 0; i < leakRate; i++ {
+                    go func() {
+                        // 永久阻塞的协程
+                        select {}
+                    }()
+                }
+            }
+        }
+    }()
+    return nil
+}
+```
+
+#### 3.5 Health Check Failure (健康检查失败)
+```go
+// 目标: 控制健康检查端点返回失败
+type HealthCheckFailure struct {
+    failureMode string // "always", "intermittent", "delayed"
+    statusCode  int
+    failRate    float64 // 0.0-1.0
+}
+
+func (h *HealthCheckFailure) HealthHandler(w http.ResponseWriter, r *http.Request) {
+    switch h.failureMode {
+    case "always":
+        w.WriteHeader(h.statusCode)
+        w.Write([]byte(`{"status":"unhealthy"}`))
+    case "intermittent":
+        if rand.Float64() < h.failRate {
+            w.WriteHeader(503)
+            w.Write([]byte(`{"status":"unhealthy"}`))
+        } else {
+            w.WriteHeader(200)
+            w.Write([]byte(`{"status":"healthy"}`))
+        }
+    case "delayed":
+        time.Sleep(time.Second * 10) // 超时
+        w.WriteHeader(200)
+    }
+}
+```
+
+#### 3.6 Disk IO (磁盘 IO 占用)
+```go
+// 目标: 产生高磁盘 IO
+type DiskIO struct {
+    writeRateMB int
+    filePath    string
+    stopCh      chan struct{}
+}
+
+func (d *DiskIO) Start(ctx context.Context, params map[string]interface{}) error {
+    writeRateMB := params["write_rate_mb"].(int)
+    
+    go func() {
+        data := make([]byte, writeRateMB*1024*1024)
+        ticker := time.NewTicker(time.Second)
+        defer ticker.Stop()
+        
+        for {
+            select {
+            case <-d.stopCh:
+                return
+            case <-ticker.C:
+                // 每秒写入指定大小的数据
+                f, _ := os.Create(d.filePath)
+                f.Write(data)
+                f.Sync() // 强制刷盘
+                f.Close()
+                os.Remove(d.filePath)
+            }
+        }
+    }()
+    return nil
+}
+```
+
+### 4. HTTP API 设计
+
+```yaml
+# 启动场景
+POST /api/v1/scenarios/{scenario_name}/start
+Content-Type: application/json
+{
+  "target_percent": 80,      # CPU 场景参数
+  "duration": 300            # 持续时间(秒), 0 表示持续到手动停止
+}
+
+# 停止场景
+POST /api/v1/scenarios/{scenario_name}/stop
+
+# 查询场景状态
+GET /api/v1/scenarios/{scenario_name}/status
+
+# 列出所有可用场景
+GET /api/v1/scenarios
+
+# 健康检查(可被控制失败)
+GET /health
+GET /ready
+
+# Metrics
+GET /metrics
+```
+
+### 5. 配置文件示例
+
+```yaml
+server:
+  port: 8080
+  
+scenarios:
+  cpu_burner:
+    enabled: true
+    default_target_percent: 50
+    
+  memory_leaker:
+    enabled: true
+    default_target_mb: 1024
+    default_leak_rate_mb: 10
+    
+  network_latency:
+    enabled: true
+    default_latency_ms: 100
+    
+  disk_io:
+    enabled: true
+    default_write_rate_mb: 50
+    file_path: "/tmp/mock-server-io-test"
+    
+  goroutine_leak:
+    enabled: true
+    default_rate: 100
+    
+  health_check_failure:
+    enabled: true
+    
+observability:
+  metrics_enabled: true
+  log_level: "info"
+```
+
+### 6. 依赖库建议
+
+```go
+// go.mod
+module github.com/Z3Labs/MockServer
+
+go 1.21
+
+require (
+    github.com/gin-gonic/gin v1.9.1           // HTTP 框架
+    github.com/prometheus/client_golang v1.17.0  // Metrics
+    github.com/spf13/viper v1.17.0            // 配置管理
+    go.uber.org/zap v1.26.0                   // 结构化日志
+    github.com/shirou/gopsutil/v3 v3.23.10    // 系统资源监控
+)
+```
+
+---
+
+## 四、使用示例
+
+### 启动 CPU 占用场景
+```bash
+curl -X POST http://localhost:8080/api/v1/scenarios/cpu_burner/start \
+  -H "Content-Type: application/json" \
+  -d '{"target_percent": 80, "duration": 300}'
+```
+
+### 启动内存泄漏场景
+```bash
+curl -X POST http://localhost:8080/api/v1/scenarios/memory_leaker/start \
+  -H "Content-Type: application/json" \
+  -d '{"target_mb": 2048, "leak_rate_mb": 20}'
+```
+
+### 停止场景
+```bash
+curl -X POST http://localhost:8080/api/v1/scenarios/cpu_burner/stop
+```
+
+### 查看 Prometheus Metrics
+```bash
+curl http://localhost:8080/metrics
+```
+
+---
+
+## 五、扩展性建议
+
+1. **场景组合**: 支持同时运行多个场景,模拟复合故障
+2. **定时任务**: 支持定时触发场景,模拟周期性故障
+3. **混沌工程集成**: 与 ChaosBlade、Chaos Mesh 等工具集成
+4. **云原生支持**: 提供 Kubernetes Operator,支持声明式配置
+5. **场景录制回放**: 记录真实故障场景并回放
+6. **AI 集成**: 提供结构化的故障信息供 AI 分析
+
+---
+
+## 六、实施优先级
+
+**P0 (核心场景)**:
+- CPU 占用
+- 内存泄漏
+- 健康检查失败
+- 网络延迟
+
+**P1 (常见场景)**:
+- 协程泄漏
+- 磁盘 IO
+- 崩溃模拟
+- 依赖服务失败
+
+**P2 (扩展场景)**:
+- 文件描述符泄漏
+- DNS 解析失败
+- 证书过期
+- 配置错误
+
+---
+
+这个设计方案提供了一个可扩展、易用的 Mock Server 架构,可以快速验证智能发布系统的 AI 研判能力。建议先实现 P0 场景,验证整体架构后再逐步扩展。
+
+---
+
+**@Lewinz** (Oct 25, 08:13)
+@xgopilot 首先这个服务不需要对外提供 metrics，golang 来实现，并且使用 go-zero 框架，go-zero 框架自带一个 metrics
+
+然后你列的场景非常好，P0 和 P1 都不错，P2 就不做了吧，太细了
+
+curl 触发异常场景的情况也很好
+
+你再整理一下设计
+
+---
+
+**@xgopilot** (Oct 25, 08:13)
+### Mock Server 设计方案(基于 go-zero)
+
+## 一、技术选型
+
+- **框架**: go-zero (自带 Prometheus metrics)
+- **语言**: Golang 1.21+
+- **场景范围**: P0 + P1 (不含 P2)
+- **触发方式**: HTTP API (curl)
+
+---
+
+## 二、项目结构
+
+```
+mock-server/
+├── cmd/
+│   └── server/
+│       └── main.go                 # 程序入口
+├── internal/
+│   ├── config/
+│   │   └── config.go               # 配置定义
+│   ├── handler/
+│   │   ├── scenario_handler.go     # 场景控制 HTTP handler
+│   │   └── health_handler.go       # 健康检查 handler
+│   ├── logic/
+│   │   └── scenario_logic.go       # 场景业务逻辑
+│   ├── svc/
+│   │   └── service_context.go      # 服务上下文
+│   ├── manager/
+│   │   └── scenario_manager.go     # 场景管理器
+│   └── scenarios/
+│       ├── interface.go            # 场景接口定义
+│       ├── cpu_burner.go           # CPU 占用
+│       ├── memory_leaker.go        # 内存泄漏
+│       ├── network_latency.go      # 网络延迟
+│       ├── health_check.go         # 健康检查失败
+│       ├── goroutine_leak.go       # 协程泄漏
+│       ├── disk_io.go              # 磁盘 IO
+│       ├── crash.go                # 崩溃模拟
+│       └── dependency.go           # 依赖服务失败
+├── etc/
+│   └── mockserver.yaml             # go-zero 配置文件
+├── api/
+│   └── mockserver.api              # go-zero API 定义
+├── go.mod
+└── README.md
+```
+
+---
+
+## 三、go-zero API 定义
+
+```go
+// api/mockserver.api
+syntax = "v1"
+
+type StartScenarioReq {
+    // 通用参数
+    Duration int `json:"duration,optional,default=0"` // 持续时间(秒),0=持续到手动停止
+    
+    // CPU Burner 参数
+    TargetPercent int `json:"target_percent,optional"` // CPU 目标百分比(0-100)
+    
+    // Memory Leaker 参数
+    TargetMB      int `json:"target_mb,optional"`      // 目标内存 MB
+    LeakRateMB    int `json:"leak_rate_mb,optional"`   // 每秒泄漏 MB
+    
+    // Network Latency 参数
+    LatencyMs     int `json:"latency_ms,optional"`     // 延迟毫秒数
+    
+    // Goroutine Leak 参数
+    GoroutinesPerSecond int `json:"goroutines_per_second,optional"`
+    
+    // Disk IO 参数
+    WriteRateMB   int `json:"write_rate_mb,optional"`  // 每秒写入 MB
+    
+    // Health Check 参数
+    FailureMode   string  `json:"failure_mode,optional"` // always/intermittent/delayed
+    StatusCode    int     `json:"status_code,optional"`  // HTTP 状态码
+    FailRate      float64 `json:"fail_rate,optional"`    // 失败率(0.0-1.0)
+    
+    // Crash 参数
+    CrashDelay    int `json:"crash_delay,optional"`    // 延迟多少秒后崩溃
+}
+
+type ScenarioStatusResp {
+    Running   bool                   `json:"running"`
+    StartTime string                 `json:"start_time,omitempty"`
+    Params    map[string]interface{} `json:"params"`
+    Metrics   map[string]float64     `json:"metrics"`
+}
+
+type ListScenariosResp {
+    Scenarios []ScenarioInfo `json:"scenarios"`
+}
+
+type ScenarioInfo {
+    Name        string `json:"name"`
+    Description string `json:"description"`
+    Running     bool   `json:"running"`
+}
+
+service mockserver {
+    @handler StartScenario
+    post /api/v1/scenarios/:scenario/start (StartScenarioReq) returns (ScenarioStatusResp)
+    
+    @handler StopScenario
+    post /api/v1/scenarios/:scenario/stop returns (ScenarioStatusResp)
+    
+    @handler GetScenarioStatus
+    get /api/v1/scenarios/:scenario/status returns (ScenarioStatusResp)
+    
+    @handler ListScenarios
+    get /api/v1/scenarios returns (ListScenariosResp)
+    
+    @handler HealthCheck
+    get /health
+    
+    @handler ReadyCheck
+    get /ready
+}
+```
+
+---
+
+## 四、场景实现优先级与设计
+
+### P0 场景(核心场景)
+
+#### 1. CPU Burner (cpu_burner)
+**目标**: 将 CPU 占用率提升到指定百分比
+
+**参数**:
+- `target_percent`: 目标 CPU 占用率(0-100)
+
+**实现要点**:
+```go
+- 根据 runtime.NumCPU() 启动对应数量的协程
+- 每个协程执行忙循环 + 动态休眠
+- 通过调整计算/休眠比例达到目标 CPU 占用
+```
+
+**curl 示例**:
+```bash
+curl -X POST http://localhost:8888/api/v1/scenarios/cpu_burner/start \
+  -H "Content-Type: application/json" \
+  -d '{"target_percent": 80, "duration": 300}'
+```
+
+---
+
+#### 2. Memory Leaker (memory_leaker)
+**目标**: 持续增长内存占用,模拟内存泄漏
+
+**参数**:
+- `target_mb`: 目标内存占用(MB)
+- `leak_rate_mb`: 每秒增长速率(MB)
+
+**实现要点**:
+```go
+- 每秒分配指定大小的字节数组
+- 将分配的内存保存到切片中防止 GC 回收
+- 填充数据防止编译器优化
+- 达到目标后停止分配
+```
+
+**curl 示例**:
+```bash
+curl -X POST http://localhost:8888/api/v1/scenarios/memory_leaker/start \
+  -H "Content-Type: application/json" \
+  -d '{"target_mb": 2048, "leak_rate_mb": 50}'
+```
+
+---
+
+#### 3. Health Check Failure (health_check)
+**目标**: 控制健康检查端点返回失败
+
+**参数**:
+- `failure_mode`: 失败模式
+  - `always`: 持续返回失败
+  - `intermittent`: 间歇性失败
+  - `delayed`: 响应超时
+- `status_code`: 返回的 HTTP 状态码(默认 503)
+- `fail_rate`: 间歇性失败的概率(0.0-1.0)
+
+**实现要点**:
+```go
+- 在 health_handler 中根据场景状态返回不同响应
+- always: 直接返回 503
+- intermittent: 按概率随机返回 200/503
+- delayed: Sleep 10s+ 后返回,触发超时
+```
+
+**curl 示例**:
+```bash
+# 持续失败
+curl -X POST http://localhost:8888/api/v1/scenarios/health_check/start \
+  -H "Content-Type: application/json" \
+  -d '{"failure_mode": "always", "status_code": 503}'
+
+# 间歇性失败(50% 概率)
+curl -X POST http://localhost:8888/api/v1/scenarios/health_check/start \
+  -H "Content-Type: application/json" \
+  -d '{"failure_mode": "intermittent", "fail_rate": 0.5}'
+```
+
+---
+
+#### 4. Network Latency (network_latency)
+**目标**: 为所有 HTTP 请求添加延迟
+
+**参数**:
+- `latency_ms`: 延迟时间(毫秒)
+
+**实现要点**:
+```go
+- 使用 go-zero 中间件机制
+- 在请求处理前 Sleep 指定时间
+- 可配置是否包括 /health 和 /metrics 端点
+```
+
+**curl 示例**:
+```bash
+curl -X POST http://localhost:8888/api/v1/scenarios/network_latency/start \
+  -H "Content-Type: application/json" \
+  -d '{"latency_ms": 500, "duration": 180}'
+```
+
+---
+
+### P1 场景(常见场景)
+
+#### 5. Goroutine Leak (goroutine_leak)
+**目标**: 持续创建不退出的协程,导致协程数持续增长
+
+**参数**:
+- `goroutines_per_second`: 每秒创建的协程数
+
+**实现要点**:
+```go
+- 每秒创建 N 个阻塞的协程
+- 协程内使用 select {} 永久阻塞
+- 监控 runtime.NumGoroutine() 观察增长
+```
+
+**curl 示例**:
+```bash
+curl -X POST http://localhost:8888/api/v1/scenarios/goroutine_leak/start \
+  -H "Content-Type: application/json" \
+  -d '{"goroutines_per_second": 100}'
+```
+
+---
+
+#### 6. Disk IO (disk_io)
+**目标**: 产生高磁盘 IO,占用磁盘带宽
+
+**参数**:
+- `write_rate_mb`: 每秒写入速率(MB)
+
+**实现要点**:
+```go
+- 每秒向 /tmp 写入指定大小的文件
+- 调用 fsync 强制刷盘
+- 写入后删除文件,持续循环
+```
+
+**curl 示例**:
+```bash
+curl -X POST http://localhost:8888/api/v1/scenarios/disk_io/start \
+  -H "Content-Type: application/json" \
+  -d '{"write_rate_mb": 100, "duration": 120}'
+```
+
+---
+
+#### 7. Crash Simulator (crash)
+**目标**: 模拟服务崩溃
+
+**参数**:
+- `crash_delay`: 延迟多少秒后崩溃
+
+**实现要点**:
+```go
+- 启动后等待指定时间
+- 调用 os.Exit(1) 或 panic() 触发崩溃
+```
+
+**curl 示例**:
+```bash
+# 10 秒后崩溃
+curl -X POST http://localhost:8888/api/v1/scenarios/crash/start \
+  -H "Content-Type: application/json" \
+  -d '{"crash_delay": 10}'
+```
+
+---
+
+#### 8. Dependency Failure (dependency)
+**目标**: 模拟依赖服务(如数据库、Redis、下游 API)调用失败
+
+**参数**:
+- `failure_type`: 失败类型
+  - `timeout`: 超时
+  - `error`: 返回错误
+  - `slow`: 响应缓慢
+
+**实现要点**:
+```go
+- 提供 /api/v1/mock-service 端点模拟下游服务
+- 根据场景状态返回不同响应:
+  - timeout: Sleep 30s
+  - error: 返回 500
+  - slow: Sleep 2-5s 后返回
+```
+
+**curl 示例**:
+```bash
+curl -X POST http://localhost:8888/api/v1/scenarios/dependency/start \
+  -H "Content-Type: application/json" \
+  -d '{"failure_type": "timeout"}'
+```
+
+---
+
+## 五、核心组件设计
+
+### 5.1 Scenario 接口
+
+```go
+type Scenario interface {
+    Name() string
+    Start(ctx context.Context, params map[string]interface{}) error
+    Stop() error
+    Status() ScenarioStatus
+    Describe() string
+}
+
+type ScenarioStatus struct {
+    Running   bool
+    StartTime time.Time
+    Params    map[string]interface{}
+    Metrics   map[string]float64 // 当前 CPU/内存/协程数等
+}
+```
+
+### 5.2 Scenario Manager
+
+```go
+type ScenarioManager struct {
+    scenarios map[string]Scenario
+    mu        sync.RWMutex
+}
+
+func (m *ScenarioManager) Register(scenario Scenario)
+func (m *ScenarioManager) Start(name string, params map[string]interface{}) error
+func (m *ScenarioManager) Stop(name string) error
+func (m *ScenarioManager) Status(name string) ScenarioStatus
+func (m *ScenarioManager) List() []ScenarioInfo
+```
+
+---
+
+## 六、配置文件(etc/mockserver.yaml)
+
+```yaml
+Name: mockserver
+Host: 0.0.0.0
+Port: 8888
+
+# go-zero 自带的 Prometheus metrics 配置
+Prometheus:
+  Host: 0.0.0.0
+  Port: 9091
+  Path: /metrics
+
+# 场景默认配置
+Scenarios:
+  CPUBurner:
+    Enabled: true
+    DefaultTargetPercent: 50
+    
+  MemoryLeaker:
+    Enabled: true
+    DefaultTargetMB: 1024
+    DefaultLeakRateMB: 10
+    
+  NetworkLatency:
+    Enabled: true
+    DefaultLatencyMs: 100
+    
+  DiskIO:
+    Enabled: true
+    DefaultWriteRateMB: 50
+    FilePath: /tmp/mock-server-io-test
+    
+  GoroutineLeak:
+    Enabled: true
+    DefaultRate: 100
+    
+  HealthCheck:
+    Enabled: true
+    
+  Crash:
+    Enabled: true
+    
+  Dependency:
+    Enabled: true
+
+Log:
+  Mode: console
+  Level: info
+```
+
+---
+
+## 七、通用 API
+
+### 查看所有场景
+```bash
+curl http://localhost:8888/api/v1/scenarios
+```
+
+### 查看场景状态
+```bash
+curl http://localhost:8888/api/v1/scenarios/cpu_burner/status
+```
+
+### 停止场景
+```bash
+curl -X POST http://localhost:8888/api/v1/scenarios/cpu_burner/stop
+```
+
+### 健康检查
+```bash
+curl http://localhost:8888/health
+curl http://localhost:8888/ready
+```
+
+### 查看 Metrics (go-zero 自带)
+```bash
+curl http://localhost:9091/metrics
+```
+
+---
+
+## 八、依赖库
+
+```go
+module github.com/Z3Labs/MockServer
+
+go 1.21
+
+require (
+    github.com/zeromicro/go-zero v1.6.0        // go-zero 框架(自带 metrics)
+    github.com/shirou/gopsutil/v3 v3.23.10     // 系统资源监控
+)
+```
+
+---
+
+## 九、部署建议
+
+### Docker 镜像
+```dockerfile
+FROM golang:1.21-alpine AS builder
+WORKDIR /app
+COPY . .
+RUN go mod download
+RUN go build -o mockserver cmd/server/main.go
+
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates
+WORKDIR /root/
+COPY --from=builder /app/mockserver .
+COPY --from=builder /app/etc ./etc
+EXPOSE 8888 9091
+CMD ["./mockserver", "-f", "etc/mockserver.yaml"]
+```
+
+### Kubernetes Deployment
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mockserver
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+      - name: mockserver
+        image: mockserver:latest
+        ports:
+        - containerPort: 8888
+        - containerPort: 9091
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+```
+
+---
+
+## 十、使用流程示例
+
+### 测试 CPU 异常场景
+```bash
+# 1. 启动 CPU 占用(80%,持续 5 分钟)
+curl -X POST http://localhost:8888/api/v1/scenarios/cpu_burner/start \
+  -d '{"target_percent": 80, "duration": 300}'
+
+# 2. 查看 Prometheus metrics 观察 CPU 变化
+curl http://localhost:9091/metrics | grep cpu
+
+# 3. AI 系统检测到 CPU 异常,分析日志和指标
+
+# 4. 停止场景
+curl -X POST http://localhost:8888/api/v1/scenarios/cpu_burner/stop
+```
+
+### 测试复合故障
+```bash
+# 同时触发 CPU + 内存 + 网络延迟
+curl -X POST http://localhost:8888/api/v1/scenarios/cpu_burner/start \
+  -d '{"target_percent": 70}'
+  
+curl -X POST http://localhost:8888/api/v1/scenarios/memory_leaker/start \
+  -d '{"target_mb": 1024, "leak_rate_mb": 50}'
+  
+curl -X POST http://localhost:8888/api/v1/scenarios/network_latency/start \
+  -d '{"latency_ms": 200}'
+```
+
+---
+
+## 十一、实施计划
+
+### Phase 1: 基础框架
+- go-zero 项目初始化
+- Scenario 接口定义
+- ScenarioManager 实现
+- HTTP API 框架
+
+### Phase 2: P0 场景实现
+- CPU Burner
+- Memory Leaker
+- Health Check Failure
+- Network Latency
+
+### Phase 3: P1 场景实现
+- Goroutine Leak
+- Disk IO
+- Crash Simulator
+- Dependency Failure
+
+### Phase 4: 测试与优化
+- 单元测试
+- 集成测试
+- 性能验证
+- 文档完善
+
+---
+
+该设计基于 go-zero 框架,利用其自带的 metrics 能力,聚焦 P0+P1 场景,通过简单的 curl 命令即可触发各种异常,便于智能发布系统进行 AI 研判测试。
+
+---
+
+**@Lewinz** (Oct 25, 08:19)
+@xgopilot 对于复合场景的触发，可以一个 curl 命令搞定嘛？如果此时已有 A 场景触发，然后再触发了 B + C 的场景，那么应该立马切换到 B + C 的场景，A 场景停止
+
+按照这个逻辑去设计
+
+---
+
+**@xgopilot** (Oct 25, 08:19)
+### 复合场景触发设计方案
+
+## 一、核心需求分析
+
+### 需求要点
+1. **单命令触发**: 一个 curl 命令可以同时启动多个场景(复合场景)
+2. **场景互斥**: 当触发新场景组合时,立即停止所有正在运行的场景
+3. **原子切换**: 场景切换应该是原子性的,确保状态一致性
+
+---
+
+## 二、API 设计方案
+
+### 2.1 新增复合场景 API
+
+```go
+// api/mockserver.api 新增
+type CompositeScenarioReq {
+    Scenarios []ScenarioConfig `json:"scenarios"` // 场景配置列表
+}
+
+type ScenarioConfig {
+    Name   string                 `json:"name"`   // 场景名称
+    Params map[string]interface{} `json:"params"` // 场景参数
+}
+
+type CompositeScenarioResp {
+    SessionId string              `json:"session_id"` // 场景会话 ID
+    Scenarios []string            `json:"scenarios"`  // 启动的场景列表
+    Status    string              `json:"status"`     // success/partial/failed
+    Details   []ScenarioDetail    `json:"details"`    // 各场景启动详情
+}
+
+type ScenarioDetail {
+    Name    string `json:"name"`
+    Success bool   `json:"success"`
+    Error   string `json:"error,omitempty"`
+}
+
+service mockserver {
+    // 启动复合场景(原子替换当前所有场景)
+    @handler StartCompositeScenario
+    post /api/v1/composite/start (CompositeScenarioReq) returns (CompositeScenarioResp)
+    
+    // 停止所有场景
+    @handler StopAllScenarios
+    post /api/v1/composite/stop
+    
+    // 查看当前运行的场景会话
+    @handler GetCurrentSession
+    get /api/v1/composite/status returns (CompositeScenarioResp)
+}
+```
+
+---
+
+## 三、使用示例
+
+### 3.1 单场景触发(A 场景)
+```bash
+curl -X POST http://localhost:8888/api/v1/composite/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scenarios": [
+      {
+        "name": "cpu_burner",
+        "params": {
+          "target_percent": 80
+        }
+      }
+    ]
+  }'
+```
+
+### 3.2 复合场景触发(B + C 场景,自动停止 A)
+```bash
+curl -X POST http://localhost:8888/api/v1/composite/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scenarios": [
+      {
+        "name": "memory_leaker",
+        "params": {
+          "target_mb": 2048,
+          "leak_rate_mb": 50
+        }
+      },
+      {
+        "name": "network_latency",
+        "params": {
+          "latency_ms": 500
+        }
+      }
+    ]
+  }'
+```
+
+### 3.3 复杂复合场景(CPU + 内存 + 网络 + 健康检查)
+```bash
+curl -X POST http://localhost:8888/api/v1/composite/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scenarios": [
+      {
+        "name": "cpu_burner",
+        "params": {"target_percent": 70}
+      },
+      {
+        "name": "memory_leaker",
+        "params": {"target_mb": 1024, "leak_rate_mb": 20}
+      },
+      {
+        "name": "network_latency",
+        "params": {"latency_ms": 300}
+      },
+      {
+        "name": "health_check",
+        "params": {"failure_mode": "intermittent", "fail_rate": 0.3}
+      }
+    ]
+  }'
+```
+
+### 3.4 停止所有场景
+```bash
+curl -X POST http://localhost:8888/api/v1/composite/stop
+```
+
+### 3.5 查看当前运行的场景会话
+```bash
+curl http://localhost:8888/api/v1/composite/status
+```
+
+**响应示例**:
+```json
+{
+  "session_id": "session-1698234567",
+  "scenarios": ["cpu_burner", "memory_leaker"],
+  "status": "success",
+  "details": [
+    {
+      "name": "cpu_burner",
+      "success": true
+    },
+    {
+      "name": "memory_leaker",
+      "success": true
+    }
+  ]
+}
+```
+
+---
+
+## 四、核心实现逻辑
+
+### 4.1 场景会话管理器(SessionManager)
+
+```go
+type SessionManager struct {
+    currentSession *ScenarioSession
+    scenarioMgr    *ScenarioManager
+    mu             sync.RWMutex
+}
+
+type ScenarioSession struct {
+    SessionId  string
+    Scenarios  []string
+    StartTime  time.Time
+    CancelFunc context.CancelFunc
+}
+
+// StartComposite 原子性启动复合场景
+func (sm *SessionManager) StartComposite(configs []ScenarioConfig) (*ScenarioSession, error) {
+    sm.mu.Lock()
+    defer sm.mu.Unlock()
+    
+    // 1. 立即停止当前会话的所有场景
+    if sm.currentSession != nil {
+        sm.stopCurrentSession()
+    }
+    
+    // 2. 创建新会话
+    ctx, cancel := context.WithCancel(context.Background())
+    session := &ScenarioSession{
+        SessionId:  generateSessionId(),
+        Scenarios:  []string{},
+        StartTime:  time.Now(),
+        CancelFunc: cancel,
+    }
+    
+    // 3. 启动所有场景
+    for _, config := range configs {
+        err := sm.scenarioMgr.Start(ctx, config.Name, config.Params)
+        if err != nil {
+            // 如果某个场景启动失败,回滚已启动的场景
+            session.CancelFunc()
+            return nil, err
+        }
+        session.Scenarios = append(session.Scenarios, config.Name)
+    }
+    
+    // 4. 设置为当前会话
+    sm.currentSession = session
+    
+    return session, nil
+}
+
+// stopCurrentSession 停止当前会话的所有场景
+func (sm *SessionManager) stopCurrentSession() {
+    if sm.currentSession == nil {
+        return
+    }
+    
+    // 调用 CancelFunc 停止所有场景的 context
+    sm.currentSession.CancelFunc()
+    
+    // 逐个停止场景
+    for _, scenarioName := range sm.currentSession.Scenarios {
+        sm.scenarioMgr.Stop(scenarioName)
+    }
+    
+    sm.currentSession = nil
+}
+```
+
+### 4.2 场景生命周期改造
+
+```go
+type Scenario interface {
+    Name() string
+    // Start 接收 context,支持取消
+    Start(ctx context.Context, params map[string]interface{}) error
+    Stop() error
+    Status() ScenarioStatus
+    Describe() string
+}
+
+// 每个场景实现需要监听 context.Done()
+func (c *CPUBurner) Start(ctx context.Context, params map[string]interface{}) error {
+    // ...
+    go func() {
+        for {
+            select {
+            case <-ctx.Done():
+                // 接收到停止信号,立即退出
+                return
+            case <-c.stopCh:
+                return
+            default:
+                // 执行场景逻辑
+            }
+        }
+    }()
+    return nil
+}
+```
+
+---
+
+## 五、场景切换流程
+
+### 流程图
+
+```
+                    触发新场景(B+C)
+                          │
+                          ▼
+         ┌────────────────────────────────┐
+         │ SessionManager 获取锁          │
+         └────────────────────────────────┘
+                          │
+                          ▼
+         ┌────────────────────────────────┐
+         │ 检查是否有当前会话(A)           │
+         └────────────────────────────────┘
+                          │
+                   是     ▼
+         ┌────────────────────────────────┐
+         │ 调用 Cancel() 停止 A 的 context│
+         └────────────────────────────────┘
+                          │
+                          ▼
+         ┌────────────────────────────────┐
+         │ 逐个调用 Stop() 停止 A 场景    │
+         └────────────────────────────────┘
+                          │
+                          ▼
+         ┌────────────────────────────────┐
+         │ 创建新会话 context(B+C)        │
+         └────────────────────────────────┘
+                          │
+                          ▼
+         ┌────────────────────────────────┐
+         │ 逐个启动 B、C 场景             │
+         └────────────────────────────────┘
+                          │
+                   成功   ▼
+         ┌────────────────────────────────┐
+         │ 设置为 currentSession          │
+         └────────────────────────────────┘
+                          │
+                          ▼
+         ┌────────────────────────────────┐
+         │ 释放锁,返回会话信息            │
+         └────────────────────────────────┘
+```
+
+### 时序说明
+
+| 时间点 | 当前运行场景 | 操作                    | 结果           |
+|--------|--------------|-------------------------|----------------|
+| T0     | 无           | 启动场景 A              | A 运行         |
+| T1     | A            | 启动场景 B+C            | A 立即停止     |
+| T1+1ms | -            | 场景切换中              | 瞬态           |
+| T1+10ms| B+C          | B+C 启动完成            | B+C 运行       |
+
+---
+
+## 六、原子性保证
+
+### 6.1 并发安全
+- 使用 `sync.RWMutex` 保护 `currentSession`
+- 所有场景切换操作都需要获取写锁
+- 状态查询操作获取读锁
+
+### 6.2 状态一致性
+- 启动新场景前,先完全停止旧场景
+- 使用 `context.WithCancel` 优雅停止场景
+- 场景启动失败时,自动回滚(停止已启动的场景)
+
+### 6.3 错误处理
+```go
+// 部分场景启动失败的处理策略
+type StartPolicy string
+
+const (
+    // 全部成功才算成功,否则回滚
+    PolicyAllOrNothing StartPolicy = "all_or_nothing"
+    // 尽力而为,部分成功也算成功
+    PolicyBestEffort   StartPolicy = "best_effort"
+)
+```
+
+**建议**: 默认使用 `PolicyBestEffort`,允许部分场景启动失败,但在响应中标明失败的场景。
+
+---
+
+## 七、配置文件更新
+
+```yaml
+# etc/mockserver.yaml 新增
+Composite:
+  # 场景启动策略
+  StartPolicy: best_effort  # all_or_nothing | best_effort
+  
+  # 场景停止超时时间(秒)
+  StopTimeout: 5
+  
+  # 是否记录会话历史
+  EnableHistory: true
+  
+  # 最多保留历史会话数
+  MaxHistorySessions: 10
+```
+
+---
+
+## 八、兼容性
+
+### 保留原有 API
+- `/api/v1/scenarios/{scenario}/start` - 单场景启动(独立模式)
+- `/api/v1/scenarios/{scenario}/stop` - 单场景停止
+
+### 行为变化
+- 使用复合 API 启动场景后,原有单场景 API 启动的场景会被停止
+- 使用单场景 API 启动时,也会停止当前复合会话
+
+**建议**: 使用统一的复合 API,即使只启动一个场景,也通过复合 API 调用,保持一致性。
+
+---
+
+## 九、实现优先级
+
+### Phase 1: 核心功能
+- SessionManager 实现
+- 复合场景启动/停止 API
+- 场景 Context 支持
+
+### Phase 2: 增强功能
+- 场景启动策略(all_or_nothing/best_effort)
+- 会话历史记录
+- 更详细的状态查询
+
+### Phase 3: 可选功能
+- 场景预设模板(预定义常见复合场景)
+- 场景启动顺序控制
+- 场景依赖关系管理
+
+---
+
+## 十、测试场景
+
+### 测试用例 1: 单场景切换
+```bash
+# 启动 A
+curl -X POST .../composite/start -d '{"scenarios":[{"name":"cpu_burner","params":{"target_percent":80}}]}'
+
+# 启动 B(A 应立即停止)
+curl -X POST .../composite/start -d '{"scenarios":[{"name":"memory_leaker","params":{"target_mb":1024}}]}'
+
+# 验证: A 已停止,B 正在运行
+curl .../composite/status
+```
+
+### 测试用例 2: 复合场景切换
+```bash
+# 启动 A+B
+curl -X POST .../composite/start -d '{"scenarios":[{"name":"cpu_burner",...},{"name":"memory_leaker",...}]}'
+
+# 启动 C+D(A+B 应立即停止)
+curl -X POST .../composite/start -d '{"scenarios":[{"name":"network_latency",...},{"name":"disk_io",...}]}'
+
+# 验证: A+B 已停止,C+D 正在运行
+```
+
+### 测试用例 3: 并发切换
+```bash
+# 同时发送多个切换请求,验证互斥锁是否正常工作
+for i in {1..10}; do
+  curl -X POST .../composite/start -d '{"scenarios":[...]}' &
+done
+wait
+
+# 验证: 只有一个会话在运行,没有场景泄漏
+```
+
+---
+
+## 总结
+
+该设计通过以下方式满足需求:
+
+✅ **单命令触发**: `/api/v1/composite/start` 一次性启动多个场景  
+✅ **自动切换**: 每次启动新场景时,自动停止当前所有场景  
+✅ **原子性**: 使用互斥锁保证场景切换的原子性  
+✅ **优雅停止**: 使用 context 机制优雅停止场景  
+✅ **可观测**: 提供会话状态查询 API  
+
+核心实现要点:
+1. 引入 `SessionManager` 管理场景会话
+2. 使用 `context.WithCancel` 控制场景生命周期
+3. 通过互斥锁保证并发安全
+4. 支持单场景和复合场景统一管理
+
+---
+
+已完成复合场景触发的完整设计方案,包含 API 设计、实现逻辑、使用示例和测试方案。核心思想是通过 SessionManager 实现场景会话的原子切换,确保新场景启动时旧场景能立即停止。
+
+---
+
+**@Lewinz** (Oct 25, 08:27)
+@xgopilot 可以，按照这个设计，实现吧
+
+---
+
+**@xgopilot** (Oct 25, 08:27)
+codeagent is processing your request, please wait a moment...
+
+---
+
