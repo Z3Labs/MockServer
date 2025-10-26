@@ -53,6 +53,10 @@ func main() {
 	addr := fmt.Sprintf("%s:%d", c.Host, c.Port)
 	log.Printf("Starting MockServer at %s", addr)
 
+	for {
+		log.Println("loading failed.....")
+	}
+
 	if err := http.ListenAndServe(addr, wrappedMux); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
