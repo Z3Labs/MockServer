@@ -27,6 +27,7 @@ func main() {
 
 	scenarioHandler := handler.NewScenarioHandler(svcCtx)
 	healthHandler := handler.NewHealthHandler(svcCtx)
+	testHandler := handler.NewTestHandler(svcCtx)
 
 	server.AddRoute(rest.Route{
 		Method:  http.MethodPost,
@@ -79,6 +80,17 @@ func main() {
 		Method:  http.MethodGet,
 		Path:    "/api/v1/mock-service",
 		Handler: healthHandler.MockService,
+	})
+
+	server.AddRoute(rest.Route{
+		Method:  http.MethodGet,
+		Path:    "/api/v1/test/sleep10ms",
+		Handler: testHandler.Test10ms,
+	})
+	server.AddRoute(rest.Route{
+		Method:  http.MethodGet,
+		Path:    "/api/v1/test/sleep30ms",
+		Handler: testHandler.Test30ms,
 	})
 
 	server.Use(handler.LatencyMiddleware(svcCtx))

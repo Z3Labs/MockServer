@@ -240,6 +240,20 @@ curl -X POST http://localhost:8888/api/v1/scenarios/dependency/start \
 curl http://localhost:8888/api/v1/mock-service
 ```
 
+### 测试接口
+
+#### 10ms 延迟测试接口
+
+```bash
+curl http://localhost:8888/api/v1/test/sleep10ms
+```
+
+#### 30ms 延迟测试接口
+
+```bash
+curl http://localhost:8888/api/v1/test/sleep30ms
+```
+
 ### 通用 API
 
 #### 列出所有场景

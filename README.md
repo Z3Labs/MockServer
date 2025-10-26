@@ -185,6 +185,20 @@ curl http://localhost:8888/ready
 curl http://localhost:8888/api/v1/mock-service
 ```
 
+### Test Endpoints
+
+#### Test Endpoint with 10ms Sleep
+
+```bash
+curl http://localhost:8888/api/v1/test/sleep10ms
+```
+
+#### Test Endpoint with 30ms Sleep
+
+```bash
+curl http://localhost:8888/api/v1/test/sleep30ms
+```
+
 ## Architecture
 
 ```
