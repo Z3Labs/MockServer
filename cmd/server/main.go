@@ -3,14 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
-	"os"
 
 	"github.com/Z3Labs/MockServer/internal/config"
 	"github.com/Z3Labs/MockServer/internal/handler"
 	"github.com/Z3Labs/MockServer/internal/svc"
-	"gopkg.in/yaml.v3"
+	"github.com/zeromicro/go-zero/core/conf"
+	"github.com/zeromicro/go-zero/rest"
 )
 
 var configFile = flag.String("f", "etc/mockserver.yaml", "the config file")
@@ -19,45 +18,71 @@ func main() {
 	flag.Parse()
 
 	var c config.Config
-	data, err := os.ReadFile(*configFile)
-	if err != nil {
-		log.Fatalf("Failed to read config file: %v", err)
-	}
+	conf.MustLoad(*configFile, &c)
 
-	if err := yaml.Unmarshal(data, &c); err != nil {
-		log.Fatalf("Failed to parse config file: %v", err)
-	}
+	server := rest.MustNewServer(c.RestConf)
+	defer server.Stop()
 
 	svcCtx := svc.NewServiceContext(c)
 
 	scenarioHandler := handler.NewScenarioHandler(svcCtx)
 	healthHandler := handler.NewHealthHandler(svcCtx)
 
-	mux := http.NewServeMux()
+	server.AddRoute(rest.Route{
+		Method:  http.MethodPost,
+		Path:    "/api/v1/scenarios/:scenario/start",
+		Handler: scenarioHandler.StartScenario,
+	})
+	server.AddRoute(rest.Route{
+		Method:  http.MethodPost,
+		Path:    "/api/v1/scenarios/:scenario/stop",
+		Handler: scenarioHandler.StopScenario,
+	})
+	server.AddRoute(rest.Route{
+		Method:  http.MethodGet,
+		Path:    "/api/v1/scenarios/:scenario/status",
+		Handler: scenarioHandler.GetScenarioStatus,
+	})
+	server.AddRoute(rest.Route{
+		Method:  http.MethodGet,
+		Path:    "/api/v1/scenarios",
+		Handler: scenarioHandler.ListScenarios,
+	})
 
-	mux.HandleFunc("POST /api/v1/scenarios/{scenario}/start", scenarioHandler.StartScenario)
-	mux.HandleFunc("POST /api/v1/scenarios/{scenario}/stop", scenarioHandler.StopScenario)
-	mux.HandleFunc("GET /api/v1/scenarios/{scenario}/status", scenarioHandler.GetScenarioStatus)
-	mux.HandleFunc("GET /api/v1/scenarios", scenarioHandler.ListScenarios)
+	server.AddRoute(rest.Route{
+		Method:  http.MethodPost,
+		Path:    "/api/v1/composite/start",
+		Handler: scenarioHandler.StartCompositeScenario,
+	})
+	server.AddRoute(rest.Route{
+		Method:  http.MethodPost,
+		Path:    "/api/v1/composite/stop",
+		Handler: scenarioHandler.StopAllScenarios,
+	})
+	server.AddRoute(rest.Route{
+		Method:  http.MethodGet,
+		Path:    "/api/v1/composite/status",
+		Handler: scenarioHandler.GetCurrentSession,
+	})
 
-	mux.HandleFunc("POST /api/v1/composite/start", scenarioHandler.StartCompositeScenario)
-	mux.HandleFunc("POST /api/v1/composite/stop", scenarioHandler.StopAllScenarios)
-	mux.HandleFunc("GET /api/v1/composite/status", scenarioHandler.GetCurrentSession)
+	server.AddRoute(rest.Route{
+		Method:  http.MethodGet,
+		Path:    "/health",
+		Handler: healthHandler.HealthCheck,
+	})
+	server.AddRoute(rest.Route{
+		Method:  http.MethodGet,
+		Path:    "/ready",
+		Handler: healthHandler.ReadyCheck,
+	})
+	server.AddRoute(rest.Route{
+		Method:  http.MethodGet,
+		Path:    "/api/v1/mock-service",
+		Handler: healthHandler.MockService,
+	})
 
-	mux.HandleFunc("GET /health", healthHandler.HealthCheck)
-	mux.HandleFunc("GET /ready", healthHandler.ReadyCheck)
-	mux.HandleFunc("GET /api/v1/mock-service", healthHandler.MockService)
+	server.Use(handler.LatencyMiddleware(svcCtx))
 
-	wrappedMux := handler.LatencyMiddleware(svcCtx)(mux)
-
-	addr := fmt.Sprintf("%s:%d", c.Host, c.Port)
-	log.Printf("Starting MockServer at %s", addr)
-
-	for {
-		log.Println("loading failed.....")
-	}
-
-	if err := http.ListenAndServe(addr, wrappedMux); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
-	}
+	fmt.Printf("Starting MockServer at %s:%d\n", c.Host, c.Port)
+	server.Start()
 }

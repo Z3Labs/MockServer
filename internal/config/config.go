@@ -1,13 +1,7 @@
 package config
 
-type Config struct {
-	Name string
-	Host string
-	Port int
-	Log  LogConfig
-}
+import "github.com/zeromicro/go-zero/rest"
 
-type LogConfig struct {
-	Mode  string
-	Level string
+type Config struct {
+	rest.RestConf
 }
