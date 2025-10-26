@@ -132,9 +132,9 @@ func (m *MemoryLeaker) Status() ScenarioStatus {
 		StartTime: m.startTime,
 		Params:    m.params,
 		Metrics: map[string]float64{
-			"current_mb":    float64(currentMB),
-			"target_mb":     float64(m.targetMB),
-			"leak_rate_mb":  float64(m.leakRateMB),
+			"current_mb":   float64(currentMB),
+			"target_mb":    float64(m.targetMB),
+			"leak_rate_mb": float64(m.leakRateMB),
 		},
 	}
 }

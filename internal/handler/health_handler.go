@@ -33,7 +33,7 @@ func (h *HealthHandler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	shouldFail, statusCode, delay := healthScenario.ShouldFail()
-	
+
 	if delay > 0 {
 		time.Sleep(delay)
 	}
