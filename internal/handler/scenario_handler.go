@@ -26,7 +26,7 @@ func (h *ScenarioHandler) StartScenario(w http.ResponseWriter, r *http.Request) 
 		httpx.ErrorCtx(r.Context(), w, err)
 		return
 	}
-	
+
 	var req map[string]interface{}
 	if err := httpx.Parse(r, &req); err != nil {
 		httpx.ErrorCtx(r.Context(), w, err)

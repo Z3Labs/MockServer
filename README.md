@@ -52,15 +52,19 @@ curl -X POST http://localhost:8888/api/v1/composite/start \
     "scenarios": [
       {
         "name": "cpu_burner",
-        "params": {"target_percent": 80}
+        "params": {"target_percent": 80},
+        "duration": 300
       },
       {
         "name": "memory_leaker",
-        "params": {"target_mb": 2048, "leak_rate_mb": 50}
+        "params": {"target_mb": 2048, "leak_rate_mb": 50},
+        "duration": 300
       }
     ]
   }'
 ```
+
+**Note**: The optional `duration` parameter (in seconds) enables auto-recovery. When set, the scenario will automatically stop after the specified duration. If multiple scenarios have different durations, they will all stop when the maximum duration is reached.
 
 #### Stop All Scenarios
 
@@ -78,6 +82,13 @@ curl http://localhost:8888/api/v1/composite/status
 
 #### CPU Burner
 
+```bash
+curl -X POST http://localhost:8888/api/v1/scenarios/cpu_burner/start \
+  -H "Content-Type: application/json" \
+  -d '{"target_percent": 80}'
+```
+
+**With auto-recovery (stops after 5 minutes):**
 ```bash
 curl -X POST http://localhost:8888/api/v1/scenarios/cpu_burner/start \
   -H "Content-Type: application/json" \
@@ -249,23 +260,29 @@ curl -X POST http://localhost:8888/api/v1/composite/start \
     "scenarios": [
       {
         "name": "cpu_burner",
-        "params": {"target_percent": 70}
+        "params": {"target_percent": 70},
+        "duration": 600
       },
       {
         "name": "memory_leaker",
-        "params": {"target_mb": 1024, "leak_rate_mb": 20}
+        "params": {"target_mb": 1024, "leak_rate_mb": 20},
+        "duration": 600
       },
       {
         "name": "network_latency",
-        "params": {"latency_ms": 300}
+        "params": {"latency_ms": 300},
+        "duration": 600
       },
       {
         "name": "health_check",
-        "params": {"failure_mode": "intermittent", "fail_rate": 0.3}
+        "params": {"failure_mode": "intermittent", "fail_rate": 0.3},
+        "duration": 600
       }
     ]
   }'
 ```
+
+All scenarios will automatically stop after 10 minutes (600 seconds).
 
 ## License
 

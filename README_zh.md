@@ -52,15 +52,19 @@ curl -X POST http://localhost:8888/api/v1/composite/start \
     "scenarios": [
       {
         "name": "cpu_burner",
-        "params": {"target_percent": 80}
+        "params": {"target_percent": 80},
+        "duration": 300
       },
       {
         "name": "memory_leaker",
-        "params": {"target_mb": 2048, "leak_rate_mb": 50}
+        "params": {"target_mb": 2048, "leak_rate_mb": 50},
+        "duration": 300
       }
     ]
   }'
 ```
+
+**注意**: 可选的 `duration` 参数（单位：秒）用于启用自动恢复功能。设置后，场景将在指定时间后自动停止。如果多个场景有不同的 duration 值，所有场景将在最大 duration 到达时一起停止。
 
 #### 停止所有场景
 
@@ -101,11 +105,17 @@ curl http://localhost:8888/api/v1/composite/status
 
 **参数说明：**
 - `target_percent`: 目标 CPU 占用率（0-100）
-- `duration`: 持续时间（秒），0 表示持续运行直到手动停止
 
 **示例：**
 ```bash
-# 将 CPU 占用率提升到 80%，持续 5 分钟
+# 将 CPU 占用率提升到 80%
+curl -X POST http://localhost:8888/api/v1/scenarios/cpu_burner/start \
+  -H "Content-Type: application/json" \
+  -d '{"target_percent": 80}'
+```
+
+**自动恢复示例（5 分钟后自动停止）：**
+```bash
 curl -X POST http://localhost:8888/api/v1/scenarios/cpu_burner/start \
   -H "Content-Type: application/json" \
   -d '{"target_percent": 80, "duration": 300}'
@@ -378,25 +388,30 @@ curl -X POST http://localhost:8888/api/v1/scenarios/cpu_burner/stop
 
 ```bash
 # 同时触发多个异常：CPU 高 + 内存泄漏 + 网络延迟 + 健康检查失败
+# 10 分钟后自动恢复
 curl -X POST http://localhost:8888/api/v1/composite/start \
   -H "Content-Type: application/json" \
   -d '{
     "scenarios": [
       {
         "name": "cpu_burner",
-        "params": {"target_percent": 70}
+        "params": {"target_percent": 70},
+        "duration": 600
       },
       {
         "name": "memory_leaker",
-        "params": {"target_mb": 1024, "leak_rate_mb": 20}
+        "params": {"target_mb": 1024, "leak_rate_mb": 20},
+        "duration": 600
       },
       {
         "name": "network_latency",
-        "params": {"latency_ms": 300}
+        "params": {"latency_ms": 300},
+        "duration": 600
       },
       {
         "name": "health_check",
-        "params": {"failure_mode": "intermittent", "fail_rate": 0.3}
+        "params": {"failure_mode": "intermittent", "fail_rate": 0.3},
+        "duration": 600
       }
     ]
   }'

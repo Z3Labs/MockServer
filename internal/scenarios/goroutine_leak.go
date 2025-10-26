@@ -110,7 +110,7 @@ func (g *GoroutineLeak) Status() ScenarioStatus {
 		StartTime: g.startTime,
 		Params:    g.params,
 		Metrics: map[string]float64{
-			"leak_rate":       float64(g.leakRate),
+			"leak_rate":          float64(g.leakRate),
 			"current_goroutines": float64(runtime.NumGoroutine()),
 		},
 	}

@@ -10,16 +10,17 @@ import (
 )
 
 type ScenarioManager struct {
-	scenarios       map[string]scenarios.Scenario
-	currentSession  *ScenarioSession
-	mu              sync.RWMutex
+	scenarios      map[string]scenarios.Scenario
+	currentSession *ScenarioSession
+	mu             sync.RWMutex
 }
 
 type ScenarioSession struct {
-	SessionId  string
-	Scenarios  []string
-	StartTime  time.Time
-	CancelFunc context.CancelFunc
+	SessionId     string
+	Scenarios     []string
+	StartTime     time.Time
+	CancelFunc    context.CancelFunc
+	RecoveryTimer *time.Timer
 }
 
 type ScenarioInfo struct {
@@ -132,6 +133,7 @@ func (sm *ScenarioManager) StartComposite(configs []ScenarioConfig) (*CompositeS
 	}
 
 	details := make([]ScenarioDetail, 0, len(configs))
+	var maxDuration int
 
 	for _, config := range configs {
 		scenario, ok := sm.scenarios[config.Name]
@@ -158,6 +160,16 @@ func (sm *ScenarioManager) StartComposite(configs []ScenarioConfig) (*CompositeS
 				Success: true,
 			})
 		}
+
+		if config.Duration > maxDuration {
+			maxDuration = config.Duration
+		}
+	}
+
+	if maxDuration > 0 {
+		session.RecoveryTimer = time.AfterFunc(time.Duration(maxDuration)*time.Second, func() {
+			sm.StopAllScenarios()
+		})
 	}
 
 	sm.currentSession = session
@@ -184,6 +196,10 @@ func (sm *ScenarioManager) StartComposite(configs []ScenarioConfig) (*CompositeS
 func (sm *ScenarioManager) stopCurrentSession() {
 	if sm.currentSession == nil {
 		return
+	}
+
+	if sm.currentSession.RecoveryTimer != nil {
+		sm.currentSession.RecoveryTimer.Stop()
 	}
 
 	sm.currentSession.CancelFunc()
@@ -236,8 +252,9 @@ func (sm *ScenarioManager) GetCurrentSession() *CompositeScenarioResp {
 }
 
 type ScenarioConfig struct {
-	Name   string                 `json:"name"`
-	Params map[string]interface{} `json:"params"`
+	Name     string                 `json:"name"`
+	Params   map[string]interface{} `json:"params"`
+	Duration int                    `json:"duration,omitempty"`
 }
 
 type CompositeScenarioResp struct {
