@@ -1,7 +1,13 @@
 Name: mockserver
 Host: 0.0.0.0
 Port: 8888
+Timeout: 30000
 
 Log:
   Mode: console
   Level: info
+
+Prometheus:
+  Host: 0.0.0.0
+  Port: 9091
+  Path: /metrics

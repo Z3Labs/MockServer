@@ -8,9 +8,9 @@ import (
 	"github.com/Z3Labs/MockServer/internal/svc"
 )
 
-func LatencyMiddleware(svcCtx *svc.ServiceContext) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func LatencyMiddleware(svcCtx *svc.ServiceContext) func(next http.HandlerFunc) http.HandlerFunc {
+	return func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
 			scenario, ok := svcCtx.ScenarioManager.GetScenario("network_latency")
 			if ok {
 				if latencyScenario, ok := scenario.(*scenarios.NetworkLatency); ok {
@@ -20,7 +20,7 @@ func LatencyMiddleware(svcCtx *svc.ServiceContext) func(http.Handler) http.Handl
 					}
 				}
 			}
-			next.ServeHTTP(w, r)
-		})
+			next(w, r)
+		}
 	}
 }

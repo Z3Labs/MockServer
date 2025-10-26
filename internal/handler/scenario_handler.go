@@ -1,11 +1,11 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/Z3Labs/MockServer/internal/manager"
 	"github.com/Z3Labs/MockServer/internal/svc"
+	"github.com/zeromicro/go-zero/rest/httpx"
 )
 
 type ScenarioHandler struct {
@@ -19,57 +19,72 @@ func NewScenarioHandler(svcCtx *svc.ServiceContext) *ScenarioHandler {
 }
 
 func (h *ScenarioHandler) StartScenario(w http.ResponseWriter, r *http.Request) {
-	scenarioName := r.PathValue("scenario")
+	var pathParams struct {
+		Scenario string `path:"scenario"`
+	}
+	if err := httpx.Parse(r, &pathParams); err != nil {
+		httpx.ErrorCtx(r.Context(), w, err)
+		return
+	}
 	
 	var req map[string]interface{}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if err := httpx.Parse(r, &req); err != nil {
+		httpx.ErrorCtx(r.Context(), w, err)
 		return
 	}
 
 	configs := []manager.ScenarioConfig{
 		{
-			Name:   scenarioName,
+			Name:   pathParams.Scenario,
 			Params: req,
 		},
 	}
 
 	resp, err := h.svcCtx.ScenarioManager.StartComposite(configs)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpx.ErrorCtx(r.Context(), w, err)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	httpx.OkJsonCtx(r.Context(), w, resp)
 }
 
 func (h *ScenarioHandler) StopScenario(w http.ResponseWriter, r *http.Request) {
-	scenarioName := r.PathValue("scenario")
-
-	err := h.svcCtx.ScenarioManager.Stop(scenarioName)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	var pathParams struct {
+		Scenario string `path:"scenario"`
+	}
+	if err := httpx.Parse(r, &pathParams); err != nil {
+		httpx.ErrorCtx(r.Context(), w, err)
 		return
 	}
 
-	status, _ := h.svcCtx.ScenarioManager.Status(scenarioName)
+	err := h.svcCtx.ScenarioManager.Stop(pathParams.Scenario)
+	if err != nil {
+		httpx.ErrorCtx(r.Context(), w, err)
+		return
+	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(status)
+	status, _ := h.svcCtx.ScenarioManager.Status(pathParams.Scenario)
+
+	httpx.OkJsonCtx(r.Context(), w, status)
 }
 
 func (h *ScenarioHandler) GetScenarioStatus(w http.ResponseWriter, r *http.Request) {
-	scenarioName := r.PathValue("scenario")
-
-	status, err := h.svcCtx.ScenarioManager.Status(scenarioName)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+	var pathParams struct {
+		Scenario string `path:"scenario"`
+	}
+	if err := httpx.Parse(r, &pathParams); err != nil {
+		httpx.ErrorCtx(r.Context(), w, err)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(status)
+	status, err := h.svcCtx.ScenarioManager.Status(pathParams.Scenario)
+	if err != nil {
+		httpx.ErrorCtx(r.Context(), w, err)
+		return
+	}
+
+	httpx.OkJsonCtx(r.Context(), w, status)
 }
 
 func (h *ScenarioHandler) ListScenarios(w http.ResponseWriter, r *http.Request) {
@@ -79,8 +94,7 @@ func (h *ScenarioHandler) ListScenarios(w http.ResponseWriter, r *http.Request) 
 		"scenarios": scenarios,
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	httpx.OkJsonCtx(r.Context(), w, resp)
 }
 
 func (h *ScenarioHandler) StartCompositeScenario(w http.ResponseWriter, r *http.Request) {
@@ -88,30 +102,28 @@ func (h *ScenarioHandler) StartCompositeScenario(w http.ResponseWriter, r *http.
 		Scenarios []manager.ScenarioConfig `json:"scenarios"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if err := httpx.Parse(r, &req); err != nil {
+		httpx.ErrorCtx(r.Context(), w, err)
 		return
 	}
 
 	resp, err := h.svcCtx.ScenarioManager.StartComposite(req.Scenarios)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpx.ErrorCtx(r.Context(), w, err)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	httpx.OkJsonCtx(r.Context(), w, resp)
 }
 
 func (h *ScenarioHandler) StopAllScenarios(w http.ResponseWriter, r *http.Request) {
 	err := h.svcCtx.ScenarioManager.StopAllScenarios()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpx.ErrorCtx(r.Context(), w, err)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	httpx.OkJsonCtx(r.Context(), w, map[string]string{
 		"status": "all scenarios stopped",
 	})
 }
@@ -119,6 +131,5 @@ func (h *ScenarioHandler) StopAllScenarios(w http.ResponseWriter, r *http.Reques
 func (h *ScenarioHandler) GetCurrentSession(w http.ResponseWriter, r *http.Request) {
 	resp := h.svcCtx.ScenarioManager.GetCurrentSession()
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	httpx.OkJsonCtx(r.Context(), w, resp)
 }
